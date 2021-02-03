@@ -273,6 +273,29 @@ class ConsejosController extends Controller
     }
 
 
+    public function deleteDirectory($dir) {
+        if (!file_exists($dir)) {
+            return true;
+        }
+    
+        if (!is_dir($dir)) {
+            return unlink($dir);
+        }
+    
+        foreach (scandir($dir) as $item) {
+            if ($item == '.' || $item == '..') {
+                continue;
+            }
+    
+            if (!$this->deleteDirectory($dir . DIRECTORY_SEPARATOR . $item)) {
+                return false;
+            }
+    
+        }
+    
+        return rmdir($dir);
+    }
+
     public function descargarLote(Request $request, $id)
     {
 
@@ -284,7 +307,11 @@ class ConsejosController extends Controller
 
         $plantillaActa->cloneBlock('resolución',$resoluciones->count(), true, true);
 
+        if(file_exists(storage_path().'\\Consejo '.$consejo->id)){
+            $this->deleteDirectory(storage_path().'\\Consejo '.$consejo->id);
+        }
 
+        mkdir(storage_path().'\\Consejo '.$consejo->id);
 
         $i = 1;
         foreach ($resoluciones as $resolucion) {
@@ -366,34 +393,60 @@ class ConsejosController extends Controller
 
 
 
-            $codigoResolucion = $resolucion->nummero_resolucion . '-P-CD-FISEI-UTA-'. $fecha->format('Y');
+  
 
             
 
-            $h = $templateProcessor->save(public_path().'\\Consejo'.$valoresRemplazar['Fecha Consejo'].'\\'.$codigoResolucion.'.docx');
-            \PhpOffice\PhpWord\Settings::setPdfRendererPath(base_path().'\vendor\dompdf\dompdf');
-            \PhpOffice\PhpWord\Settings::setPdfRendererName('DomPDF');
-            $phpWord = \PhpOffice\PhpWord\IOFactory::load($h); 
-            $xmlWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord);
-            $fileName = 'Resolución '. $resolucion->nummero_resolucion.'-P-CD-FISEI-UTA-'.$fecha->format('Y').'.pdf';
+            $h = $templateProcessor->save('h.docx');
+
             
-           $xmlWriter->save(public_path().'\\'. $fileName);  
+
+            $phpWord = \PhpOffice\PhpWord\IOFactory::load($h); // Read the temp file
+            
+            $xmlWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'Word2007');
+
+            
+            $fileName = 'Resolución '. $resolucion->nummero_resolucion.'-P-CD-FISEI-UTA-'.$fecha->format('Y').'.docx';
+
+            
+            
+            $xmlWriter->save(storage_path().'\\Consejo '.$consejo->id .'\\'.$fileName);  
+
             $i++;
         }
         
 
+        $zipFileName = 'Consejo '.$fechaConsejo->format('d') . ' de ' . $mesConsejo . ' de ' . $fechaConsejo->format('Y') .'.zip';
+      
+        $zip = new \ZipArchive;
+        if ($zip->open(public_path() . '/' . $zipFileName, \ZipArchive::CREATE) === TRUE) {
+            // Add File in ZipArchive
+            $zip->addFile(storage_path(),'Consejo '.$consejo->id);
 
+            $dir = opendir(storage_path().'\\Consejo '.$consejo->id); 
+       
+            while($file = readdir($dir)) { 
+                if(is_file($pathdir.$file)) { 
+                    $zip -> addFile($pathdir.$file, $file); 
+                } 
+            } 
+            // Close ZipArchive     
+            $zip->close();
+        }
+        // Set Header
+    
+
+        $filetopath = public_path().'/'.$zipFileName;
         
 
-        $fileName = 'Acta Consejo '.$fechaConsejo->format('d') . ' de ' . $mesConsejo . ' de ' . $fechaConsejo->format('Y') .'.docx';
         $headers = [
             'Cache-Control' => 'public',
             'Content-Description' => 'Content-Disposition',
-            'Content-Disposition' => 'attachment; filename='.$fileName,
+            'Content-Disposition' => 'attachment; filename='.$zipFileName,
             'Content-Transfer-Encoding' => 'binary'
         ];
 
-        return \Response::download($plantillaActa->save("acta.docx"), $fileName,$headers);
+        return \Response::download($filetopath, $zipFileName,$headers);
     }
 
 

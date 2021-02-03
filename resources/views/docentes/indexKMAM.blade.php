@@ -27,7 +27,7 @@ $(function() {
             "ordering": false,
             "info": false,
             "lengthChange": false,
-            "pageLength": 8
+            "pageLength": 5
   }
   
    

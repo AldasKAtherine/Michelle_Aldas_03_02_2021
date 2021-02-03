@@ -57,7 +57,7 @@
                                         @elseif($field['type']=='docente')
                                         <select name="{{$field['label']}}" class="form-control">
                                                             @foreach($docentes as $doce)
-                                                            <option>{{$doce->nombres}}</option>
+                                                            <option {{$respuestas[preg_replace('~[ .]~', '_', $field['label'])] == $doce->nombres ? "selected" : "" }} >{{$doce->nombres}}</option>
                                                             @endforeach
                                         </select>
                                         @elseif($field['type'] == 'marcar')

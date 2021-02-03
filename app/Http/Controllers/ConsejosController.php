@@ -422,7 +422,9 @@ class ConsejosController extends Controller
 
         $pathdir = storage_path().'\\Consejo '.$consejo->id.'\\';
 
-        unlink(public_path() . '/' . $zipFileName);
+        if(file_exists(public_path() . '/' . $zipFileName)){
+            unlink(public_path() . '/' . $zipFileName);
+        }
 
 
         if ($zip->open(public_path() . '/' . $zipFileName, \ZipArchive::CREATE) === TRUE) {
@@ -577,6 +579,10 @@ class ConsejosController extends Controller
         $zip = new \ZipArchive;
 
         $pathdir = storage_path().'\\Consejo '.$consejo->id.'\\';
+
+        if(file_exists(public_path() . '/' . $zipFileName)){
+            unlink(public_path() . '/' . $zipFileName);
+        }
 
 
         if ($zip->open(public_path() . '/' . $zipFileName, \ZipArchive::CREATE) === TRUE) {

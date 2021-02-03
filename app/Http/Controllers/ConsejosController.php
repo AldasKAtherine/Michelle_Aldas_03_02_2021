@@ -422,6 +422,8 @@ class ConsejosController extends Controller
 
         $pathdir = storage_path().'\\Consejo '.$consejo->id.'\\';
 
+        unlink(public_path() . '/' . $zipFileName);
+
 
         if ($zip->open(public_path() . '/' . $zipFileName, \ZipArchive::CREATE) === TRUE) {
             // Add File in ZipArchive
@@ -453,6 +455,159 @@ class ConsejosController extends Controller
         return \Response::download($filetopath, $zipFileName,$headers);
     }
 
+
+    public function descargarLotePDF(Request $request, $id)
+    {
+
+        $consejo = Consejo::findOrFail($id);
+
+        $resoluciones = Resolucion::where('consejo_id','=', $id)->get();
+
+        $plantillaActa = new \PhpOffice\PhpWord\TemplateProcessor(public_path().'/uploads/acta.docx');
+
+        $plantillaActa->cloneBlock('resolución',$resoluciones->count(), true, true);
+
+        if(file_exists(storage_path().'\\Consejo '.$consejo->id)){
+            $this->deleteDirectory(storage_path().'\\Consejo '.$consejo->id);
+        }
+
+        mkdir(storage_path().'\\Consejo '.$consejo->id);
+
+        $i = 1;
+        foreach ($resoluciones as $resolucion) {
+            $formato = Formato::findOrFail($resolucion->formato_id);
+            $estudiante = Estudiante::findOrFail($resolucion->estudiante_id);
+            $carrera = Carrera::findOrFail($estudiante->carrera_id);
+
+            $templateProcessor = new \PhpOffice\PhpWord\TemplateProcessor($formato->ubicacion_plantilla);
+
+            $valoresRemplazar = array();
+            $respuestas = json_decode($resolucion['respuestas'], true);
+
+            foreach ($this->validConsts as $cosnt) {
+                $constT = preg_replace('~[ .]~', '_', $cosnt);
+                if(array_key_exists($constT, $respuestas)){
+                    $valoresRemplazar[$cosnt] = $respuestas[$constT];
+                }
+            }
+
+
+            $meses = array("Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre");
+            $dias = array("domingo", "lunes","martes","miércoles","jueves","viernes","sábado");
+            $fecha = Carbon::parse($resolucion->created_at)->timezone('America/Bogota');
+            $mes = $meses[($fecha->format('n')) - 1];
+
+            $fechaConsejo = Carbon::parse($consejo->fecha_consejo)->timezone('America/Bogota');
+            $mesConsejo = $meses[($fecha->format('n')) - 1];
+            $diaConsejo = $dias[($fechaConsejo->dayOfWeek)];
+    
+            $valoresRemplazar['Tipo Sesión'] = $consejo->tipo;
+            $valoresRemplazar['Número Resolución'] = $resolucion->nummero_resolucion;
+            $valoresRemplazar['Fecha Resolución'] = $fecha->format('d') . ' de ' . $mes . ' de ' . $fecha->format('Y');
+            $valoresRemplazar['Fecha Consejo'] = $diaConsejo. ' ' . $fechaConsejo->format('d').  ' de ' . $mesConsejo . ' de ' . $fechaConsejo->format('Y');
+            $valoresRemplazar['Anio Resolución'] = $fecha->format('Y');
+     
+            // Estudiante
+    
+            $valoresRemplazar['Presidente Consejo'] = $consejo->presidente;
+
+            foreach (json_decode($formato['form_schema'], true) as $section){
+
+                $valoresRemplazar[array_key_exists('varText', $section) ? $section['varText'] :'['.$section['title'].']'] = $section['title'];
+    
+                foreach ($section['fields'] as $field) {
+                    if($field['type'] == 'marcar') {
+                        foreach ($field['values'] as $key => $value) {
+                            if(array_key_exists(preg_replace('~[ .]~', '_', $field['label']),$respuestas )){
+                                $res = $respuestas[preg_replace('~[ .]~', '_', $field['label'])];
+                                $valoresRemplazar[$value['varText']] =  strpos($res, $value['value']) !== false ?  '☒': '☐';
+                                $valoresRemplazar[$field['label']] =  strpos($res, $value['value']) !== false ?  '☒': '☐';
+                            } else{
+                                $valoresRemplazar[$value['varText']] = '☐';
+                                $valoresRemplazar[$field['label']] = '☐';
+                            }
+                        }
+                    }else if($field['type'] == 'tabla') {
+                        $tabla = $this->generateDOC('<body>'.$respuestas[preg_replace('~[ .]~', '_', $field['label'])].'</body>');
+    
+                        $templateProcessor->replaceXmlBlock($field['varText'], $tabla);
+                    } else if(array_key_exists(preg_replace('~[ .]~', '_', $field['label']),$respuestas )){
+                        if($field['type'] != 'date' ){
+                            $valoresRemplazar[$field['varText']] = $respuestas[preg_replace('~[ .]~', '_', $field['label'])];
+                            $valoresRemplazar[$field['label']] = $respuestas[preg_replace('~[ .]~', '_', $field['label'])];
+                        } else {
+                            $fecha2 = Carbon::createFromFormat('d/m/Y', $respuestas[preg_replace('~[ .]~', '_', $field['label'])])->timezone('America/Bogota');
+                            $mes2 = $meses[($fecha2->format('n')) - 1];
+                            $valoresRemplazar[$field['varText']] = $mes2. ' ' . $fecha2->format('d'). ', ' . $fecha2->format('Y'); ;
+                            $valoresRemplazar[$field['label']] = $mes2. ' ' . $fecha2->format('d'). ', ' . $fecha2->format('Y'); ;
+                        }
+                    } else{
+                        $valoresRemplazar[$field['varText']] = '';
+                        $valoresRemplazar[$field['label']] = '';
+                    }
+                }
+    
+            }
+    
+            $templateProcessor->setValues($valoresRemplazar);
+
+
+            $h = $templateProcessor->save('h.docx');
+
+            \PhpOffice\PhpWord\Settings::setPdfRendererPath(base_path().'\vendor\dompdf\dompdf');
+            \PhpOffice\PhpWord\Settings::setPdfRendererName('DomPDF');
+
+            $phpWord = \PhpOffice\PhpWord\IOFactory::load($h); // Read the temp file
+            
+            $xmlWriter = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'PDF');
+
+            
+            $fileName = 'Resolución '. $resolucion->nummero_resolucion.'-P-CD-FISEI-UTA-'.$fecha->format('Y').'.pdf';
+
+            
+            
+            $xmlWriter->save(storage_path().'\\Consejo '.$consejo->id .'\\'.$fileName);  
+
+            $i++;
+        }
+        
+
+        $zipFileName = 'Consejo '.$fechaConsejo->format('d') . ' de ' . $mesConsejo . ' de ' . $fechaConsejo->format('Y') .'.zip';
+      
+        $zip = new \ZipArchive;
+
+        $pathdir = storage_path().'\\Consejo '.$consejo->id.'\\';
+
+
+        if ($zip->open(public_path() . '/' . $zipFileName, \ZipArchive::CREATE) === TRUE) {
+            // Add File in ZipArchive
+       
+
+            $dir = opendir($pathdir); 
+       
+            while($file = readdir($dir)) { 
+                if(is_file($pathdir.$file)) { 
+                    $zip -> addFile($pathdir.$file, $file); 
+                } 
+            } 
+            // Close ZipArchive     
+            $zip->close();
+        }
+        // Set Header
+    
+
+        $filetopath = public_path().'/'.$zipFileName;
+        
+
+        $headers = [
+            'Cache-Control' => 'public',
+            'Content-Description' => 'Content-Disposition',
+            'Content-Disposition' => 'attachment; filename='.$zipFileName,
+            'Content-Transfer-Encoding' => 'binary'
+        ];
+
+        return \Response::download($filetopath, $zipFileName,$headers);
+    }
 
     public function generateDOC($html)
     {

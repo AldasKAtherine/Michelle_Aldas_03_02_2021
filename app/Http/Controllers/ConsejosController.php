@@ -419,11 +419,15 @@ class ConsejosController extends Controller
         $zipFileName = 'Consejo '.$fechaConsejo->format('d') . ' de ' . $mesConsejo . ' de ' . $fechaConsejo->format('Y') .'.zip';
       
         $zip = new \ZipArchive;
+
+        $pathdir = storage_path().'\\Consejo '.$consejo->id.'\\';
+
+
         if ($zip->open(public_path() . '/' . $zipFileName, \ZipArchive::CREATE) === TRUE) {
             // Add File in ZipArchive
-            $zip->addFile(storage_path(),'Consejo '.$consejo->id);
+       
 
-            $dir = opendir(storage_path().'\\Consejo '.$consejo->id); 
+            $dir = opendir($pathdir); 
        
             while($file = readdir($dir)) { 
                 if(is_file($pathdir.$file)) { 
